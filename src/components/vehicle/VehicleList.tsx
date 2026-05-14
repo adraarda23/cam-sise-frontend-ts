@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { vehicleApi } from '../../api/vehicleApi';
 import { depotApi } from '../../api/depotApi';
 import { vehicleTypeApi } from '../../api/vehicleTypeApi';
@@ -81,9 +82,10 @@ export const VehicleList: React.FC = () => {
       await vehicleApi.register(request);
       setShowAddModal(false);
       setFormData({ depotId: '', vehicleTypeId: '', plateNumber: '' });
+      toast.success('Araç eklendi');
       loadData(page);
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
@@ -99,9 +101,10 @@ export const VehicleList: React.FC = () => {
   const handleStatusChange = async (vehicleId: number, newStatus: string) => {
     try {
       await vehicleApi.changeStatus(vehicleId, newStatus);
+      toast.success('Araç durumu güncellendi');
       loadData(page);
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 

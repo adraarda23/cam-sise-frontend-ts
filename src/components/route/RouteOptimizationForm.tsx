@@ -1,36 +1,48 @@
 import React, { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { routeApi } from '../../api/routeApi';
 import { MultiVehicleOptimizeResponse } from '../../types/api.types';
 import { Card } from '../common/Card';
+import { ActualValue } from '../common/ActualValue';
+import { EstimatedValue } from '../common/EstimatedValue';
+import { FleetSuggestionCards } from './FleetSuggestionCards';
 import { handleApiError } from '../../utils/errorHandler';
 
+const schema = z.object({
+  depotId: z.coerce.number().int().positive('Geçerli depo ID giriniz'),
+  plannedDate: z.string().optional(),
+  maxVehicles: z.coerce.number().int().min(1).max(20),
+});
+type FormValues = z.infer<typeof schema>;
+
 export const RouteOptimizationForm: React.FC = () => {
-  const [depotId, setDepotId] = useState<number>(1);
-  const [plannedDate, setPlannedDate] = useState<string>('');
-  const [maxVehicles, setMaxVehicles] = useState<number>(10);
-  const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<MultiVehicleOptimizeResponse | null>(null);
-  const [error, setError] = useState<string>('');
 
-  const handleOptimize = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-    setResult(null);
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema) as any,
+    defaultValues: { depotId: 1, plannedDate: '', maxVehicles: 10 },
+  });
 
-    try {
-      const response = await routeApi.optimizeMultiVehicle({
-        depotId,
-        plannedDate: plannedDate || undefined,
-        maxVehicles,
-      });
-      setResult(response);
-    } catch (err: any) {
-      setError(handleApiError(err));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const optimize = useMutation({
+    mutationFn: (values: FormValues) =>
+      routeApi.optimizeMultiVehicle({
+        depotId: values.depotId,
+        plannedDate: values.plannedDate || undefined,
+        maxVehicles: values.maxVehicles,
+      }),
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success(`${data.vehiclesUsed} araç için rotalar oluşturuldu`);
+    },
+    onError: (e) => toast.error(handleApiError(e)),
+  });
+
+  const onSubmit = form.handleSubmit((values) => optimize.mutate(values));
+  const depotId = form.watch('depotId');
 
   return (
     <div className="space-y-6">
@@ -47,44 +59,35 @@ export const RouteOptimizationForm: React.FC = () => {
           </div>
         </div>
 
-        <form onSubmit={handleOptimize} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Depo ID
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Depo ID</label>
               <input
                 type="number"
-                value={depotId}
-                onChange={(e) => setDepotId(Number(e.target.value))}
+                {...form.register('depotId')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                required
               />
+              {form.formState.errors.depotId && (
+                <p className="text-xs text-anomaly-600 mt-1">{form.formState.errors.depotId.message}</p>
+              )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Planlanan Tarih (opsiyonel)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Planlanan Tarih (opsiyonel)</label>
               <input
                 type="date"
-                value={plannedDate}
-                onChange={(e) => setPlannedDate(e.target.value)}
+                {...form.register('plannedDate')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <p className="text-xs text-gray-500 mt-1">Boş bırakılırsa yarın kullanılır</p>
+              <p className="text-xs text-info-500 mt-1">Boş bırakılırsa yarın kullanılır</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Maksimum Araç Sayısı
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Maksimum Araç Sayısı</label>
               <input
                 type="number"
-                value={maxVehicles}
-                onChange={(e) => setMaxVehicles(Number(e.target.value))}
-                min={1}
-                max={20}
+                {...form.register('maxVehicles')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -92,38 +95,15 @@ export const RouteOptimizationForm: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition duration-150 font-medium flex items-center justify-center"
+            disabled={optimize.isPending}
+            className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition duration-150 font-medium"
           >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Optimize Ediliyor...
-              </>
-            ) : (
-              'Rotaları Optimize Et'
-            )}
+            {optimize.isPending ? 'Optimize Ediliyor...' : 'Rotaları Optimize Et'}
           </button>
         </form>
       </Card>
 
-      {error && (
-        <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <FleetSuggestionCards depotId={depotId} />
 
       {result && (
         <Card>
@@ -135,25 +115,21 @@ export const RouteOptimizationForm: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-600 font-medium">Kullanılan Araç</p>
-              <p className="text-3xl font-bold text-blue-900 mt-1">{result.vehiclesUsed}</p>
+            <div className="bg-actual-50 p-4 rounded-lg border border-actual-200">
+              <p className="text-sm text-actual-600 font-medium">Kullanılan Araç</p>
+              <ActualValue value={result.vehiclesUsed} size="xl" />
             </div>
-
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-sm text-green-600 font-medium">Toplam Mesafe</p>
-              <p className="text-3xl font-bold text-green-900 mt-1">{result.totalDistanceKm.toFixed(1)}</p>
-              <p className="text-xs text-green-600 mt-1">km</p>
+            <div className="bg-estimated-50 p-4 rounded-lg border border-estimated-200">
+              <p className="text-sm text-estimated-700 font-medium">Toplam Mesafe (tahmini)</p>
+              <EstimatedValue value={result.totalDistanceKm} unit="km" size="xl" showRange={false} />
             </div>
-
-            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-              <p className="text-sm text-yellow-600 font-medium">Toplam Palet</p>
-              <p className="text-3xl font-bold text-yellow-900 mt-1">{result.totalPallets}</p>
+            <div className="bg-actual-50 p-4 rounded-lg border border-actual-200">
+              <p className="text-sm text-actual-600 font-medium">Toplam Palet</p>
+              <ActualValue value={result.totalPallets} size="xl" />
             </div>
-
-            <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-              <p className="text-sm text-purple-600 font-medium">Toplam Ayırıcı</p>
-              <p className="text-3xl font-bold text-purple-900 mt-1">{result.totalSeparators}</p>
+            <div className="bg-actual-50 p-4 rounded-lg border border-actual-200">
+              <p className="text-sm text-actual-600 font-medium">Toplam Ayırıcı</p>
+              <ActualValue value={result.totalSeparators} size="xl" />
             </div>
           </div>
 
@@ -181,28 +157,20 @@ export const RouteOptimizationForm: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-sm">
                     <div>
-                      <p className="text-gray-600">Mesafe</p>
-                      <p className="font-semibold text-gray-900">
-                        {plan.totalDistance.kilometers.toFixed(2)} km
-                      </p>
+                      <p className="text-info-500">Mesafe</p>
+                      <EstimatedValue value={plan.totalDistance.kilometers} unit="km" showRange={false} size="sm" precision={1} />
                     </div>
                     <div>
-                      <p className="text-gray-600">Süre</p>
-                      <p className="font-semibold text-gray-900">
-                        {plan.estimatedDuration.minutes} dk
-                      </p>
+                      <p className="text-info-500">Süre</p>
+                      <EstimatedValue value={plan.estimatedDuration.minutes} unit="dk" showRange={false} size="sm" precision={0} />
                     </div>
                     <div>
-                      <p className="text-gray-600">Palet</p>
-                      <p className="font-semibold text-gray-900">
-                        {plan.totalCapacityPallets}
-                      </p>
+                      <p className="text-info-500">Palet</p>
+                      <ActualValue value={plan.totalCapacityPallets} size="sm" />
                     </div>
                     <div>
-                      <p className="text-gray-600">Ayırıcı</p>
-                      <p className="font-semibold text-gray-900">
-                        {plan.totalCapacitySeparators}
-                      </p>
+                      <p className="text-info-500">Ayırıcı</p>
+                      <ActualValue value={plan.totalCapacitySeparators} size="sm" />
                     </div>
                   </div>
                 </div>

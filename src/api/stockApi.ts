@@ -1,5 +1,5 @@
 import apiClient from './axiosConfig';
-import { RecordInflowRequest, FillerStock, PageResponse } from '../types/api.types';
+import { RecordInflowRequest, FillerStock, PageResponse, ForecastResponse } from '../types/api.types';
 
 export const stockApi = {
   recordInflow: async (data: RecordInflowRequest): Promise<FillerStock> => {
@@ -35,6 +35,18 @@ export const stockApi = {
     const response = await apiClient.put(
       `/api/inventory/stocks/${fillerId}/${assetType}/threshold`,
       { newThreshold }
+    );
+    return response.data;
+  },
+
+  forecast: async (
+    fillerId: number,
+    assetType: 'PALLET' | 'SEPARATOR',
+    days: number = 7
+  ): Promise<ForecastResponse> => {
+    const response = await apiClient.get(
+      `/api/inventory/stocks/${fillerId}/${assetType}/forecast`,
+      { params: { days } }
     );
     return response.data;
   },

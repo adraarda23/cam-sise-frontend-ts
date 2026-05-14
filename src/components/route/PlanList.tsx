@@ -1,20 +1,27 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { routeApi } from '../../api/routeApi';
 import { fillerApi } from '../../api/fillerApi';
 import { vehicleApi } from '../../api/vehicleApi';
-import { CollectionPlan, RouteStop, Filler, Vehicle } from '../../types/api.types';
+import { depotApi } from '../../api/depotApi';
+import { CollectionPlan, RouteStop, Filler, Vehicle, Depot } from '../../types/api.types';
 import { Card } from '../common/Card';
 import { StatusBadge } from '../common/StatusBadge';
 import { Pagination } from '../common/Pagination';
 import { handleApiError } from '../../utils/errorHandler';
 import { RouteMap } from '../map/RouteMap';
+import { useConfirm } from '../common/ConfirmDialog';
+import { useInputDialog } from '../common/InputDialog';
 
 const PAGE_SIZE = 5;
 
 export const PlanList: React.FC = () => {
+  const confirm = useConfirm();
+  const askInput = useInputDialog();
   const [plans, setPlans] = useState<CollectionPlan[]>([]);
   const [fillers, setFillers] = useState<Filler[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [depots, setDepots] = useState<Depot[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<string>('ALL');
@@ -33,16 +40,18 @@ export const PlanList: React.FC = () => {
     try {
       setIsLoading(true);
       const status = filter === 'ALL' ? undefined : filter;
-      const [plansData, fillersData, vehiclesData] = await Promise.all([
+      const [plansData, fillersData, vehiclesData, depotsData] = await Promise.all([
         routeApi.getCollectionPlans({ status, page: p, size: PAGE_SIZE }),
         fillerApi.getAll({ page: 0, size: 200 }),
         vehicleApi.getAll({ page: 0, size: 200 }),
+        depotApi.getAll(),
       ]);
       setPlans(plansData.content ?? []);
       setTotalPages(plansData.totalPages ?? 0);
       setTotalElements(plansData.totalElements ?? 0);
       setFillers(fillersData.content ?? []);
       setVehicles(vehiclesData.content ?? []);
+      setDepots(depotsData ?? []);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -79,62 +88,91 @@ export const PlanList: React.FC = () => {
       await routeApi.assignVehicle(assignVehicleModal.planId, selectedVehicleId);
       setAssignVehicleModal(null);
       setSelectedVehicleId(null);
+      toast.success('Araç atandı');
       loadPlans();
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
   const handleStartCollection = async (planId: number) => {
-    if (!window.confirm('Bu planı başlatmak istediğinize emin misiniz?')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Toplama planını başlat',
+      description: `Plan #${planId} başlatılacak. Araç depodan ayrılmış olarak işaretlenir ve rota IN_PROGRESS durumuna geçer.`,
+      confirmLabel: 'Başlat',
+      cancelLabel: 'Vazgeç',
+      variant: 'primary',
+    });
+    if (!ok) return;
 
     try {
       await routeApi.startCollection(planId);
+      toast.success('Toplama başlatıldı');
       loadPlans();
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
   const handleCompleteCollection = async (planId: number, plan: CollectionPlan) => {
-    const palletsStr = prompt(
-      `Toplanan palet sayısını giriniz (Planlanan: ${plan.totalCapacityPallets}):`
-    );
-    if (!palletsStr) return;
+    const values = await askInput({
+      title: `Plan #${planId} — Toplamayı tamamla`,
+      description: `Fiili toplanan miktarları girin. Planlanan: ${plan.totalCapacityPallets} palet / ${plan.totalCapacitySeparators} ayırıcı.`,
+      confirmLabel: 'Tamamla',
+      cancelLabel: 'Vazgeç',
+      fields: [
+        {
+          name: 'pallets',
+          label: 'Toplanan palet sayısı',
+          type: 'number',
+          defaultValue: plan.totalCapacityPallets,
+          min: 0,
+          helperText: `Planlanan: ${plan.totalCapacityPallets}`,
+        },
+        {
+          name: 'separators',
+          label: 'Toplanan ayırıcı sayısı',
+          type: 'number',
+          defaultValue: plan.totalCapacitySeparators,
+          min: 0,
+          helperText: `Planlanan: ${plan.totalCapacitySeparators}`,
+        },
+      ],
+    });
+    if (!values) return;
 
-    const separatorsStr = prompt(
-      `Toplanan ayırıcı sayısını giriniz (Planlanan: ${plan.totalCapacitySeparators}):`
-    );
-    if (!separatorsStr) return;
-
-    const pallets = parseInt(palletsStr);
-    const separators = parseInt(separatorsStr);
-
-    if (isNaN(pallets) || isNaN(separators)) {
-      alert('Geçerli sayılar giriniz');
+    const pallets = parseInt(values.pallets);
+    const separators = parseInt(values.separators);
+    if (isNaN(pallets) || isNaN(separators) || pallets < 0 || separators < 0) {
+      toast.error('Geçerli sayılar giriniz');
       return;
     }
 
     try {
       await routeApi.completeCollection(planId, pallets, separators);
+      toast.success(`Toplama tamamlandı: ${pallets} palet / ${separators} ayırıcı`);
       loadPlans();
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
   const handleCancelPlan = async (planId: number) => {
-    if (!window.confirm('Bu planı iptal etmek istediğinize emin misiniz?')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Planı iptal et',
+      description: `Plan #${planId} iptal edilecek. Bağlı tüm taleplerin durumu eski haline döner. Bu işlem geri alınamaz.`,
+      confirmLabel: 'İptal Et',
+      cancelLabel: 'Vazgeç',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       await routeApi.cancelPlan(planId);
+      toast.success('Plan iptal edildi');
       loadPlans();
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
@@ -442,7 +480,14 @@ export const PlanList: React.FC = () => {
                   </svg>
                 </button>
               </div>
-              <RouteMap plan={selectedPlan} depotCoordinates={[40.1885, 29.061]} />
+              {(() => {
+                // Plan'ın gerçek depot'unu lookup et; bulunamazsa Bursa merkez fallback.
+                const planDepot = depots.find(d => d.id === selectedPlan.depotId);
+                const depotCoords: [number, number] = planDepot
+                  ? [planDepot.location.latitude, planDepot.location.longitude]
+                  : [40.1885, 29.061];
+                return <RouteMap plan={selectedPlan} depotCoordinates={depotCoords} />;
+              })()}
             </div>
           </div>
         </div>

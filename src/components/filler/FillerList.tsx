@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { fillerApi } from '../../api/fillerApi';
@@ -7,6 +8,7 @@ import { Filler } from '../../types/api.types';
 import { Card } from '../common/Card';
 import { Pagination } from '../common/Pagination';
 import { handleApiError } from '../../utils/errorHandler';
+import { useConfirm } from '../common/ConfirmDialog';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -37,6 +39,7 @@ const emptyForm = {
 };
 
 export const FillerList: React.FC = () => {
+  const confirm = useConfirm();
   const [fillers, setFillers] = useState<Filler[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,6 +58,9 @@ export const FillerList: React.FC = () => {
   const [geocodeStatus, setGeocodeStatus] = useState<'idle' | 'loading' | 'found' | 'error'>('idle');
   const [geocodeError, setGeocodeError] = useState('');
   const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
+  // Nominatim importance < 0.5 → adres geocode'unun düşük güvenli olduğuna işaret eder.
+  const [geocodeConfidence, setGeocodeConfidence] = useState<'high' | 'low' | null>(null);
+  const [geocodeMatchedDisplay, setGeocodeMatchedDisplay] = useState<string>('');
 
   // edit modal state
   const [editingFiller, setEditingFiller] = useState<Filler | null>(null);
@@ -63,6 +69,8 @@ export const FillerList: React.FC = () => {
   const [editGeoStatus, setEditGeoStatus] = useState<'idle' | 'loading' | 'found' | 'error'>('idle');
   const [editGeoError, setEditGeoError] = useState('');
   const [editMapCenter, setEditMapCenter] = useState<[number, number] | null>(null);
+  const [editGeoConfidence, setEditGeoConfidence] = useState<'high' | 'low' | null>(null);
+  const [editGeoMatchedDisplay, setEditGeoMatchedDisplay] = useState<string>('');
 
   // customer user creation modal
   const [userForFiller, setUserForFiller] = useState<Filler | null>(null);
@@ -108,8 +116,10 @@ export const FillerList: React.FC = () => {
     const query = [street, province, city, postalCode, country].filter(Boolean).join(', ');
     setGeocodeStatus('loading');
     setGeocodeError('');
+    setGeocodeConfidence(null);
+    setGeocodeMatchedDisplay('');
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(query)}`;
       const res = await fetch(url, {
         headers: { 'Accept-Language': 'tr', 'User-Agent': 'CamSise-App/1.0' },
       });
@@ -119,11 +129,18 @@ export const FillerList: React.FC = () => {
         setGeocodeError('Adres bulunamadı. Adresi kontrol edip tekrar deneyin.');
         return;
       }
-      const lat = parseFloat(data[0].lat);
-      const lon = parseFloat(data[0].lon);
+      const top = data[0];
+      const lat = parseFloat(top.lat);
+      const lon = parseFloat(top.lon);
       setRegisterForm(prev => ({ ...prev, latitude: String(lat), longitude: String(lon) }));
       setMapCenter([lat, lon]);
       setGeocodeStatus('found');
+      // Importance < 0.5 → düşük güvenli (Nominatim'in heuristik skoru, 0..1).
+      // Type 'house' veya 'building' yoksa da düşük güven sayıyoruz.
+      const importance: number = typeof top.importance === 'number' ? top.importance : 0;
+      const goodType = top.type === 'house' || top.type === 'building' || top.osm_type === 'way';
+      setGeocodeConfidence(importance >= 0.5 && goodType ? 'high' : 'low');
+      setGeocodeMatchedDisplay(top.display_name ?? '');
     } catch {
       setGeocodeStatus('error');
       setGeocodeError('Konum servisi ile bağlantı kurulamadı.');
@@ -166,8 +183,10 @@ export const FillerList: React.FC = () => {
     const query = [street, province, city, postalCode, country].filter(Boolean).join(', ');
     setEditGeoStatus('loading');
     setEditGeoError('');
+    setEditGeoConfidence(null);
+    setEditGeoMatchedDisplay('');
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(query)}`;
       const res = await fetch(url, { headers: { 'Accept-Language': 'tr', 'User-Agent': 'CamSise-App/1.0' } });
       const data = await res.json();
       if (!data.length) {
@@ -175,11 +194,16 @@ export const FillerList: React.FC = () => {
         setEditGeoError('Adres bulunamadı. Adresi kontrol edip tekrar deneyin.');
         return;
       }
-      const lat = parseFloat(data[0].lat);
-      const lon = parseFloat(data[0].lon);
+      const top = data[0];
+      const lat = parseFloat(top.lat);
+      const lon = parseFloat(top.lon);
       setEditForm(prev => ({ ...prev, latitude: String(lat), longitude: String(lon) }));
       setEditMapCenter([lat, lon]);
       setEditGeoStatus('found');
+      const importance: number = typeof top.importance === 'number' ? top.importance : 0;
+      const goodType = top.type === 'house' || top.type === 'building' || top.osm_type === 'way';
+      setEditGeoConfidence(importance >= 0.5 && goodType ? 'high' : 'low');
+      setEditGeoMatchedDisplay(top.display_name ?? '');
     } catch {
       setEditGeoStatus('error');
       setEditGeoError('Konum servisi ile bağlantı kurulamadı.');
@@ -240,12 +264,21 @@ export const FillerList: React.FC = () => {
   };
 
   const handleActivate = async (id: number) => {
-    if (!window.confirm('Bu dolumcuyu aktif etmek istediğinize emin misiniz?')) return;
+    const filler = fillers.find((f) => f.id === id);
+    const ok = await confirm({
+      title: 'Dolumcuyu aktif et',
+      description: `${filler?.name ?? `Dolumcu #${id}`} tekrar aktif edilecek. Stok ve talep işlemleri açılacak.`,
+      confirmLabel: 'Aktif Et',
+      cancelLabel: 'Vazgeç',
+      variant: 'primary',
+    });
+    if (!ok) return;
     try {
       await fillerApi.activate(id);
+      toast.success('Dolumcu aktif edildi');
       loadFillers(page);
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
@@ -271,12 +304,21 @@ export const FillerList: React.FC = () => {
   };
 
   const handleDeactivate = async (id: number) => {
-    if (!window.confirm('Bu dolumcuyu pasif etmek istediğinize emin misiniz?')) return;
+    const filler = fillers.find((f) => f.id === id);
+    const ok = await confirm({
+      title: 'Dolumcuyu pasif et',
+      description: `${filler?.name ?? `Dolumcu #${id}`} pasif duruma alınacak. Bu dolumcu için yeni talep oluşturulamaz, var olan planlardan etkilenmez.`,
+      confirmLabel: 'Pasif Et',
+      cancelLabel: 'Vazgeç',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await fillerApi.deactivate(id);
+      toast.success('Dolumcu pasif edildi');
       loadFillers(page);
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
@@ -424,7 +466,7 @@ export const FillerList: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     </svg>
                     <p className="text-xs text-gray-600">
-                      Konum: {filler.location.latitude.toFixed(4)}, {filler.location.longitude.toFixed(4)}
+                      Konum: {filler.location.latitude.toFixed(6)}, {filler.location.longitude.toFixed(6)}
                     </p>
                   </div>
                 )}
@@ -571,6 +613,17 @@ export const FillerList: React.FC = () => {
                 {editGeoStatus === 'error' && <p className="mt-2 text-sm text-red-600">{editGeoError}</p>}
                 {editGeoStatus === 'found' && editMapCenter && (
                   <div className="mt-3">
+                    {editGeoConfidence === 'low' && (
+                      <div className="mb-3 bg-red-50 border-l-4 border-red-400 p-3 rounded">
+                        <p className="text-sm font-semibold text-red-800">⚠️ Adres tam bulunamadı</p>
+                        <p className="text-xs text-red-700 mt-1">
+                          Bu adres birden fazla şehirde bulunuyor olabilir. Lütfen marker'ı haritada doğru konuma sürükleyin — yoksa rota yanlış şehre çıkar.
+                        </p>
+                        {editGeoMatchedDisplay && (
+                          <p className="text-[11px] text-red-600 mt-1 italic">Bulunan: {editGeoMatchedDisplay}</p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-gray-500 mb-1">İşareti sürükleyerek ince ayar yapabilirsiniz.</p>
                     <MapContainer center={editMapCenter} zoom={14}
                       style={{ height: '220px', width: '100%' }}
@@ -590,7 +643,7 @@ export const FillerList: React.FC = () => {
                       />
                     </MapContainer>
                     <p className="text-xs text-gray-400 mt-1">
-                      {parseFloat(editForm.latitude).toFixed(5)}, {parseFloat(editForm.longitude).toFixed(5)}
+                      {parseFloat(editForm.latitude).toFixed(6)}, {parseFloat(editForm.longitude).toFixed(6)}
                     </p>
                   </div>
                 )}
@@ -861,6 +914,17 @@ export const FillerList: React.FC = () => {
 
                 {geocodeStatus === 'found' && mapCenter && (
                   <div className="mt-3">
+                    {geocodeConfidence === 'low' && (
+                      <div className="mb-3 bg-red-50 border-l-4 border-red-400 p-3 rounded">
+                        <p className="text-sm font-semibold text-red-800">⚠️ Adres tam bulunamadı</p>
+                        <p className="text-xs text-red-700 mt-1">
+                          Bu adres birden fazla şehirde bulunuyor olabilir. Lütfen marker'ı haritada doğru konuma sürükleyin — yoksa rota yanlış şehre çıkar.
+                        </p>
+                        {geocodeMatchedDisplay && (
+                          <p className="text-[11px] text-red-600 mt-1 italic">Bulunan: {geocodeMatchedDisplay}</p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-gray-500 mb-1">
                       Konumu ince ayar için işareti sürükleyebilirsiniz.
                     </p>
@@ -891,7 +955,7 @@ export const FillerList: React.FC = () => {
                       />
                     </MapContainer>
                     <p className="text-xs text-gray-400 mt-1">
-                      {parseFloat(registerForm.latitude).toFixed(5)}, {parseFloat(registerForm.longitude).toFixed(5)}
+                      {parseFloat(registerForm.latitude).toFixed(6)}, {parseFloat(registerForm.longitude).toFixed(6)}
                     </p>
                   </div>
                 )}

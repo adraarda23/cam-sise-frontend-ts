@@ -56,4 +56,9 @@ export const routeApi = {
     const response = await apiClient.post(`/api/logistics/collection-plans/${planId}/cancel`);
     return response.data;
   },
+
+  refreshGeometry: async (planId: number): Promise<CollectionPlan> => {
+    const response = await apiClient.post(`/api/logistics/collection-plans/${planId}/refresh-geometry`);
+    return response.data;
+  },
 };

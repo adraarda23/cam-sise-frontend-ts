@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Layout } from '../components/common/Layout';
 import { useAuth } from '../context/AuthContext';
 import { userApi, UserResponse, CreateStaffRequest, CreateCustomerRequest } from '../api/userApi';
 import { fillerApi } from '../api/fillerApi';
 import { Filler } from '../types/api.types';
 import { Pagination } from '../components/common/Pagination';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 const emptyStaffForm: CreateStaffRequest = { username: '', password: '', fullName: '' };
 const emptyCustomerForm: CreateCustomerRequest = { username: '', password: '', fullName: '', fillerId: null };
 
 export const UsersPage: React.FC = () => {
   const { user: authUser } = useAuth();
+  const confirm = useConfirm();
   const isAdmin = authUser?.role === 'ADMIN';
 
   const [users, setUsers] = useState<UserResponse[]>([]);
@@ -127,12 +130,21 @@ export const UsersPage: React.FC = () => {
   };
 
   const handleDeactivate = async (userId: number) => {
-    if (!window.confirm('Bu kullanıcıyı devre dışı bırakmak istiyor musunuz?')) return;
+    const targetUser = users.find((u) => u.id === userId);
+    const ok = await confirm({
+      title: 'Kullanıcıyı devre dışı bırak',
+      description: `${targetUser?.fullName ?? `Kullanıcı #${userId}`} (${targetUser?.username ?? ''}) artık giriş yapamaz. Hesap silinmez, daha sonra tekrar aktif edilebilir.`,
+      confirmLabel: 'Devre Dışı Bırak',
+      cancelLabel: 'Vazgeç',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await userApi.deactivate(userId);
+      toast.success('Kullanıcı devre dışı bırakıldı');
       await load(page);
     } catch {
-      setError('İşlem başarısız.');
+      toast.error('İşlem başarısız.');
     }
   };
 

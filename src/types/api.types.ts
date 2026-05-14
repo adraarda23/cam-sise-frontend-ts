@@ -44,9 +44,22 @@ export interface FillerStock {
   thresholdQuantity: number;
   estimatedLossRate: {
     percentage: number;
+    stdDev?: number;
+    sampleSize?: number;
   };
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ForecastResponse {
+  mean: number;
+  stdDev: number;
+  lowerBound: number;
+  upperBound: number;
+  sampleSize: number;
+  confidenceLevel: number;
+  formatted: string;
+  daysUntilThreshold: number;
 }
 
 // Route Optimization Types
@@ -70,6 +83,7 @@ export interface CollectionPlan {
   totalDistance: { kilometers: number };
   estimatedDuration: { minutes: number };
   routeStopsJson: string;
+  routeGeometryJson?: string | null;
   totalCapacityPallets: number;
   totalCapacitySeparators: number;
   createdAt: string;
@@ -225,11 +239,68 @@ export interface AnalyticsSummary {
   plansByStatus: Record<string, number>;
   avgDistanceKm: number;
   avgDurationMinutes: number;
+  medianDistanceKm: number;
+  p95DistanceKm: number;
+  stdDevDistanceKm: number;
   totalFillers: number;
   totalPalletStock: number;
   totalSeparatorStock: number;
   fillersWithLowPalletStock: number;
   fillersWithLowSeparatorStock: number;
+  medianFillerStockPallet: number;
+  p95FillerStockPallet: number;
+  stdDevFillerStockPallet: number;
+  anomalyCount24h: number;
+  criticalAnomalyCount24h: number;
+  unreadNotificationCount: number;
+}
+
+// Notification Types
+export interface NotificationItem {
+  id: number;
+  recipientUserId: number | null;
+  poolOperatorId: number | null;
+  fillerId: number | null;
+  type: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  title: string;
+  body: string | null;
+  actionUrl: string | null;
+  read: boolean;
+  emailSent: boolean;
+  createdAt: string;
+  readAt: string | null;
+}
+
+export interface NotificationListResponse {
+  content: NotificationItem[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+}
+
+// Fleet suggestion
+export interface FleetVehicleAssignment {
+  vehicleTypeId: number;
+  vehicleTypeName: string;
+  count: number;
+  capacityPerVehicle: { pallets: number; separators: number };
+}
+
+export interface FleetComposition {
+  label: string;
+  reason: string;
+  assignments: FleetVehicleAssignment[];
+  totalCapacity: { pallets: number; separators: number };
+  totalDemand: { pallets: number; separators: number };
+  estimatedCostTRY: number;
+  slackPercent: number;
+  vehicleCount: number;
+}
+
+export interface SuggestFleetRequest {
+  depotId?: number;
+  estimatedRouteKm?: number;
 }
 
 // Vehicle Type Types

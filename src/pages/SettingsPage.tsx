@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Layout } from '../components/common/Layout';
 import { Card } from '../components/common/Card';
 import { settingsApi } from '../api/settingsApi';
 import { handleApiError } from '../utils/errorHandler';
+import apiClient from '../api/axiosConfig';
 
 export const SettingsPage: React.FC = () => {
   const [minPallet, setMinPallet] = useState<number>(20);
@@ -11,6 +13,31 @@ export const SettingsPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+
+  // SMTP test
+  const [mailTestTo, setMailTestTo] = useState<string>('');
+  const [mailTesting, setMailTesting] = useState(false);
+  const [mailResult, setMailResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  const handleSendTestMail = async () => {
+    if (!mailTestTo.trim()) {
+      toast.error('Hedef adres boş olamaz');
+      return;
+    }
+    setMailTesting(true);
+    setMailResult(null);
+    try {
+      const res = await apiClient.post('/api/admin/diagnostics/mail-test', { to: mailTestTo.trim() });
+      setMailResult(res.data);
+      if (res.data.ok) toast.success('Test maili gönderildi');
+      else toast.error('Mail gönderilemedi');
+    } catch (err: any) {
+      setMailResult({ ok: false, detail: handleApiError(err) });
+      toast.error('Mail gönderilemedi');
+    } finally {
+      setMailTesting(false);
+    }
+  };
 
   useEffect(() => {
     settingsApi.get()
@@ -42,7 +69,7 @@ export const SettingsPage: React.FC = () => {
         <p className="text-gray-600 mt-2">Firma geneli yapılandırma değerleri</p>
       </div>
 
-      <div className="max-w-lg">
+      <div className="max-w-lg space-y-6">
         <Card>
           <div className="flex items-center space-x-3 mb-6">
             <div className="bg-indigo-500 p-3 rounded-lg">
@@ -118,6 +145,59 @@ export const SettingsPage: React.FC = () => {
               <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
+        </Card>
+
+        {/* SMTP test kartı — bildirim sisteminin gerçekten mail attığını doğrulamak için */}
+        <Card>
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="bg-emerald-500 p-3 rounded-lg">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Bildirim Servisi Testi</h2>
+              <p className="text-sm text-gray-600">
+                SMTP bağlantısının çalıştığını doğrulamak için kendinize bir test maili gönderin.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hedef e-posta</label>
+              <input
+                type="email"
+                value={mailTestTo}
+                onChange={(e) => setMailTestTo(e.target.value)}
+                placeholder="ornek@firma.com"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleSendTestMail}
+              disabled={mailTesting}
+              className="w-full bg-emerald-600 text-white py-2.5 px-4 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 font-medium flex items-center justify-center gap-2"
+            >
+              {mailTesting && (
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block" />
+              )}
+              {mailTesting ? 'Gönderiliyor...' : 'Test Mailini Gönder'}
+            </button>
+
+            {mailResult && (
+              <div className={`p-3 rounded text-sm ${mailResult.ok ? 'bg-green-50 border-l-4 border-green-400 text-green-700' : 'bg-red-50 border-l-4 border-red-400 text-red-700'}`}>
+                <p className="font-medium">{mailResult.ok ? '✅ Mail gönderildi' : '❌ Mail başarısız'}</p>
+                <p className="text-xs mt-1 break-words">{mailResult.detail}</p>
+                {mailResult.ok && (
+                  <p className="text-xs mt-1 text-green-600">
+                    Spam/gereksiz klasörünü de kontrol etmeyi unutmayın.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </Card>
       </div>
     </Layout>

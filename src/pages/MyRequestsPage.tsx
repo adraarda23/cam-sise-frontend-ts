@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { Layout } from '../components/common/Layout';
 import { ManualRequestForm } from '../components/request/ManualRequestForm';
 import { useAuth } from '../context/AuthContext';
@@ -7,9 +8,11 @@ import { CollectionRequest } from '../types/api.types';
 import { Card } from '../components/common/Card';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { handleApiError } from '../utils/errorHandler';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 export const MyRequestsPage: React.FC = () => {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [requests, setRequests] = useState<CollectionRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,22 +39,38 @@ export const MyRequestsPage: React.FC = () => {
   };
 
   const handleCancelRequest = async (requestId: number) => {
-    if (!window.confirm('Bu talebi iptal etmek istediğinize emin misiniz?')) return;
+    const ok = await confirm({
+      title: 'Talebi iptal et',
+      description: `Talep #${requestId} iptal edilecek. İptal edildikten sonra geri alınamaz.`,
+      confirmLabel: 'İptal Et',
+      cancelLabel: 'Vazgeç',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await collectionApi.cancelRequest(requestId);
+      toast.success('Talep iptal edildi');
       loadRequests();
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 
   const handleCancelGroup = async (ids: number[]) => {
-    if (!window.confirm('Bu talebi iptal etmek istediğinize emin misiniz?')) return;
+    const ok = await confirm({
+      title: 'Talepleri iptal et',
+      description: `${ids.length} adet talep birlikte iptal edilecek.`,
+      confirmLabel: 'İptal Et',
+      cancelLabel: 'Vazgeç',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       await Promise.all(ids.map(id => collectionApi.cancelRequest(id)));
+      toast.success('Talepler iptal edildi');
       loadRequests();
     } catch (err) {
-      alert(handleApiError(err));
+      toast.error(handleApiError(err));
     }
   };
 

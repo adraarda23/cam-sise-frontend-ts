@@ -143,7 +143,7 @@ export const StaffDashboard: React.FC = () => {
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-blue-600 font-medium">Toplam Dolumcu</p>
+              <p className="text-sm text-blue-600 font-medium">Toplam Aktif Dolumcu</p>
               {isLoading ? (
                 <div className="animate-pulse bg-blue-300 h-9 w-16 rounded mt-1"></div>
               ) : (
